@@ -42,15 +42,29 @@ public class CollegeDAO {
 
     // ── UPDATE ───────────────────────────────────────────────────────────────
     public boolean updateCollege(String oldCode, College updated) {
-        // Update code and name; CASCADE will fix linked programs automatically
-        String sql = "UPDATE college SET code = ?, name = ? WHERE code = ?";
         try {
             Connection conn = DBConnection.getConnection();
-            PreparedStatement pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, updated.getCode().toUpperCase().trim());
-            pstmt.setString(2, updated.getName().trim());
-            pstmt.setString(3, oldCode.toUpperCase().trim());
-            return pstmt.executeUpdate() > 0;
+            conn.createStatement().execute("PRAGMA foreign_keys = OFF");
+
+            // Step 1: Update programs manually
+            PreparedStatement updatePrograms = conn.prepareStatement(
+                    "UPDATE program SET college = ? WHERE college = ?");
+            updatePrograms.setString(1, updated.getCode().toUpperCase().trim());
+            updatePrograms.setString(2, oldCode.toUpperCase().trim());
+            updatePrograms.executeUpdate();
+            updatePrograms.close();
+
+            // Step 2: Update the college
+            PreparedStatement updateCollege = conn.prepareStatement(
+                    "UPDATE college SET code = ?, name = ? WHERE code = ?");
+            updateCollege.setString(1, updated.getCode().toUpperCase().trim());
+            updateCollege.setString(2, updated.getName().trim());
+            updateCollege.setString(3, oldCode.toUpperCase().trim());
+            boolean result = updateCollege.executeUpdate() > 0;
+            updateCollege.close();
+
+            conn.createStatement().execute("PRAGMA foreign_keys = ON");
+            return result;
         } catch (Exception e) {
             System.err.println("updateCollege failed: " + e.getMessage());
             return false;
@@ -59,15 +73,47 @@ public class CollegeDAO {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
     public boolean deleteCollege(String code) {
-        // Will fail if programs still reference this college (RESTRICT)
-        String sql = "DELETE FROM college WHERE code = ?";
+        try {
+            Connection conn = DBConnection.getConnection();
+
+            // Step 1: Disable foreign keys
+            conn.createStatement().execute("PRAGMA foreign_keys = OFF");
+
+            // Step 2: Update programs first
+            PreparedStatement updatePrograms = conn.prepareStatement(
+                    "UPDATE program SET college = 'N/A' WHERE college = ?");
+            updatePrograms.setString(1, code.toUpperCase().trim());
+            updatePrograms.executeUpdate();
+            updatePrograms.close();
+
+            // Step 3: Delete the college
+            PreparedStatement deleteCol = conn.prepareStatement(
+                    "DELETE FROM college WHERE code = ?");
+            deleteCol.setString(1, code.toUpperCase().trim());
+            boolean result = deleteCol.executeUpdate() > 0;
+            deleteCol.close();
+
+            // Step 4: Re-enable foreign keys
+            conn.createStatement().execute("PRAGMA foreign_keys = ON");
+
+            return result;
+        } catch (Exception e) {
+            System.err.println("deleteCollege failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // ── SET COLLEGE TO N/A (cascade on college delete) ────────────────────────
+    public boolean setCollegeToNull(String collegeCode) {
+        String sql = "UPDATE program SET college = 'N/A' WHERE college = ?";
         try {
             Connection conn = DBConnection.getConnection();
             PreparedStatement pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, code.toUpperCase().trim());
-            return pstmt.executeUpdate() > 0;
+            pstmt.setString(1, collegeCode.toUpperCase().trim());
+            pstmt.executeUpdate();
+            return true;
         } catch (Exception e) {
-            System.err.println("deleteCollege failed: " + e.getMessage());
+            System.err.println("setCollegeToNull failed: " + e.getMessage());
             return false;
         }
     }
