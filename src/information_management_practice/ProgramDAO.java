@@ -3,6 +3,7 @@ package information_management_practice;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,15 +44,30 @@ public class ProgramDAO {
 
     // ── UPDATE ───────────────────────────────────────────────────────────────
     public boolean updateProgram(String oldCode, Program updated) {
-        String sql = "UPDATE program SET code = ?, name = ?, college = ? WHERE code = ?";
         try {
             Connection conn = DBConnection.getConnection();
-            PreparedStatement pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, updated.getCode().toUpperCase().trim());
-            pstmt.setString(2, updated.getName().trim());
-            pstmt.setString(3, updated.getCollegeCode().toUpperCase().trim());
-            pstmt.setString(4, oldCode.toUpperCase().trim());
-            return pstmt.executeUpdate() > 0;
+            conn.createStatement().execute("PRAGMA foreign_keys = OFF");
+
+            // Step 1: Update students manually
+            PreparedStatement updateStudents = conn.prepareStatement(
+                    "UPDATE student SET course = ? WHERE course = ?");
+            updateStudents.setString(1, updated.getCode().toUpperCase().trim());
+            updateStudents.setString(2, oldCode.toUpperCase().trim());
+            updateStudents.executeUpdate();
+            updateStudents.close();
+
+            // Step 2: Update the program
+            PreparedStatement updateProg = conn.prepareStatement(
+                    "UPDATE program SET code = ?, name = ?, college = ? WHERE code = ?");
+            updateProg.setString(1, updated.getCode().toUpperCase().trim());
+            updateProg.setString(2, updated.getName().trim());
+            updateProg.setString(3, updated.getCollegeCode().toUpperCase().trim());
+            updateProg.setString(4, oldCode.toUpperCase().trim());
+            boolean result = updateProg.executeUpdate() > 0;
+            updateProg.close();
+
+            conn.createStatement().execute("PRAGMA foreign_keys = ON");
+            return result;
         } catch (Exception e) {
             System.err.println("updateProgram failed: " + e.getMessage());
             return false;
@@ -60,12 +76,30 @@ public class ProgramDAO {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
     public boolean deleteProgram(String code) {
-        String sql = "DELETE FROM program WHERE code = ?";
         try {
             Connection conn = DBConnection.getConnection();
-            PreparedStatement pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, code.toUpperCase().trim());
-            return pstmt.executeUpdate() > 0;
+
+            // Step 1: Disable foreign keys
+            conn.createStatement().execute("PRAGMA foreign_keys = OFF");
+
+            // Step 2: Update students first
+            PreparedStatement updateStudents = conn.prepareStatement(
+                    "UPDATE student SET course = 'NOT ENROLLED' WHERE course = ?");
+            updateStudents.setString(1, code.toUpperCase().trim());
+            updateStudents.executeUpdate();
+            updateStudents.close();
+
+            // Step 3: Delete the program
+            PreparedStatement deleteProg = conn.prepareStatement(
+                    "DELETE FROM program WHERE code = ?");
+            deleteProg.setString(1, code.toUpperCase().trim());
+            boolean result = deleteProg.executeUpdate() > 0;
+            deleteProg.close();
+
+            // Step 4: Re-enable foreign keys
+            conn.createStatement().execute("PRAGMA foreign_keys = ON");
+
+            return result;
         } catch (Exception e) {
             System.err.println("deleteProgram failed: " + e.getMessage());
             return false;
@@ -201,5 +235,20 @@ public class ProgramDAO {
     // ── EXISTS ───────────────────────────────────────────────────────────────
     public boolean exists(String code) {
         return getProgram(code) != null;
+    }
+
+// ── SET COLLEGE TO N/A (cascade on college delete) ────────────────────────
+    public boolean setCollegeToNull(String collegeCode) {
+        String sql = "UPDATE program SET college = 'N/A' WHERE college = ?";
+        try {
+            Connection conn = DBConnection.getConnection();
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, collegeCode.toUpperCase().trim());
+            pstmt.executeUpdate();
+            return true;
+        } catch (Exception e) {
+            System.err.println("setCollegeToNull failed: " + e.getMessage());
+            return false;
+        }
     }
 }
