@@ -3,6 +3,7 @@ package information_management_practice;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -73,12 +74,15 @@ public class StudentDAO {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
     public boolean deleteStudent(String id) {
-        String sql = "DELETE FROM student WHERE id = ?";
         try {
             Connection conn = DBConnection.getConnection();
-            PreparedStatement pstmt = conn.prepareStatement(sql);
+            conn.createStatement().execute("PRAGMA foreign_keys = OFF");
+            PreparedStatement pstmt = conn.prepareStatement(
+                    "DELETE FROM student WHERE id = ?");
             pstmt.setString(1, id.trim());
-            return pstmt.executeUpdate() > 0;
+            boolean result = pstmt.executeUpdate() > 0;
+            conn.createStatement().execute("PRAGMA foreign_keys = ON");
+            return result;
         } catch (Exception e) {
             System.err.println("deleteStudent failed: " + e.getMessage());
             return false;
@@ -249,5 +253,21 @@ public class StudentDAO {
     // ── EXISTS ───────────────────────────────────────────────────────────────
     public boolean exists(String id) {
         return getStudent(id) != null;
+    }
+
+// ── SET PROGRAM TO NOT ENROLLED (cascade on program delete) ───────────────
+    public boolean setProgramToNotEnrolled(String programCode) {
+        String sql = "UPDATE student SET course = 'NOT ENROLLED' WHERE course = ?";
+        try {
+            Connection conn = DBConnection.getConnection();
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, programCode.toUpperCase().trim());
+            pstmt.executeUpdate();
+            return true;
+        } catch (Exception e) {
+            System.err.println("setProgramToNotEnrolled failed: " + e.getMessage());
+            return false;
+        }
+
     }
 }
